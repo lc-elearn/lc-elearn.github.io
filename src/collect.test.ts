@@ -180,3 +180,148 @@ describe("collect", () => {
     expect(seen).toEqual(["Bearer abc"]);
   });
 });
+
+describe("collect: failures that must not hide a repo", () => {
+  it("rejects on a 500 from a course repo", async () => {
+    const routes = {
+      [ORG_URL]: [200, [repo("lc-russian")]],
+      ...repoRoutes("lc-russian"),
+      [`${API}/repos/lc-elearn/lc-russian/commits?sha=main&per_page=1`]: [
+        500,
+        { message: "x" },
+      ],
+    } as Record<string, [number, unknown]>;
+    await expect(
+      collect({ ...OPTIONS, fetch: fakeFetch(routes) }),
+    ).rejects.toThrow("GitHub API 500");
+  });
+
+  it("rejects on a 403 (rate limit)", async () => {
+    const routes = {
+      [ORG_URL]: [200, [repo("lc-russian")]],
+      ...repoRoutes("lc-russian", [403, { message: "rate limited" }]),
+    } as Record<string, [number, unknown]>;
+    await expect(
+      collect({ ...OPTIONS, fetch: fakeFetch(routes) }),
+    ).rejects.toThrow("GitHub API 403");
+  });
+
+  it("rejects on a network error", async () => {
+    const fetch = async (url: string): Promise<Response> => {
+      if (url === ORG_URL)
+        return new Response(JSON.stringify([repo("lc-russian")]));
+      throw new TypeError("network down");
+    };
+    await expect(collect({ ...OPTIONS, fetch })).rejects.toThrow(
+      "network down",
+    );
+  });
+
+  it("skips a repo with no commits, with a reason", async () => {
+    const result = await collect({
+      ...OPTIONS,
+      fetch: fakeFetch({
+        [ORG_URL]: [200, [repo("empty")]],
+        ...repoRoutes("empty"),
+        [`${API}/repos/lc-elearn/empty/commits?sha=main&per_page=1`]: [200, []],
+      }),
+    });
+    expect(result.skipped).toEqual([
+      { repo: "empty", reason: "no commits on main" },
+    ]);
+  });
+});
+
+describe("collect: listing, branches and templates", () => {
+  it("reads a second page when the first is full", async () => {
+    const page1 = Array.from({ length: 100 }, (_, i) =>
+      repo(`r${i}`, { has_pages: false }),
+    );
+    const page2 = [repo("lc-base-template", { is_template: true })];
+    const result = await collect({
+      ...OPTIONS,
+      fetch: fakeFetch({
+        [ORG_URL]: [200, page1],
+        [ORG_URL.replace("&page=1", "&page=2")]: [200, page2],
+        [`${API}/repos/lc-elearn/lc-base-template/commits?sha=main&per_page=1`]:
+          [200, [{ commit: { committer: { date: "2026-11-12T10:00:00Z" } } }]],
+      }),
+    });
+    expect(result.template?.repo).toBe("lc-base-template");
+  });
+
+  it("rejects when the organisation listing is not JSON", async () => {
+    await expect(
+      collect({
+        ...OPTIONS,
+        fetch: fakeFetch({ [ORG_URL]: [200, "not json"] }),
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("counts only lesson folders, never the example, files or odd names", async () => {
+    const routes = {
+      [ORG_URL]: [200, [repo("lc-new")]],
+      ...repoRoutes("lc-new"),
+      [`${API}/repos/lc-elearn/lc-new/contents/lo-config?ref=main`]: [
+        200,
+        [
+          { name: "lo-00-example", type: "dir" },
+          { name: "lo-01-a", type: "dir" },
+          { name: "lo-02-b", type: "file" },
+          { name: "notes", type: "dir" },
+          { name: "lo-x", type: "dir" },
+        ],
+      ],
+    } as Record<string, [number, unknown]>;
+    const result = await collect({ ...OPTIONS, fetch: fakeFetch(routes) });
+    expect(result.courses[0]?.lessons).toBe(1);
+  });
+
+  it("encodes the branch name in URLs", async () => {
+    const seen: string[] = [];
+    const fetch = async (url: string): Promise<Response> => {
+      seen.push(url);
+      if (url === ORG_URL)
+        return new Response(
+          JSON.stringify([repo("lc-x", { default_branch: "feat/a b" })]),
+        );
+      return new Response("[]", { status: 200 });
+    };
+    await collect({ ...OPTIONS, fetch });
+    expect(seen).toContain(
+      `${API}/repos/lc-elearn/lc-x/commits?sha=feat%2Fa%20b&per_page=1`,
+    );
+  });
+
+  it("skips a second template repo", async () => {
+    const commits = [
+      200,
+      [{ commit: { committer: { date: "2026-11-12T10:00:00Z" } } }],
+    ];
+    const result = await collect({
+      ...OPTIONS,
+      fetch: fakeFetch({
+        [ORG_URL]: [
+          200,
+          [
+            repo("t1", { is_template: true }),
+            repo("t2", { is_template: true }),
+          ],
+        ],
+        [`${API}/repos/lc-elearn/t1/commits?sha=main&per_page=1`]: commits as [
+          number,
+          unknown,
+        ],
+        [`${API}/repos/lc-elearn/t2/commits?sha=main&per_page=1`]: commits as [
+          number,
+          unknown,
+        ],
+      }),
+    });
+    expect(result.template?.repo).toBe("t1");
+    expect(result.skipped).toEqual([
+      { repo: "t2", reason: "a second template repo" },
+    ]);
+  });
+});

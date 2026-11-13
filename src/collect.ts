@@ -32,6 +32,9 @@ interface RepoSummary {
 
 class NotFound extends Error {}
 
+/** A problem with one repo's own data: the repo is skipped. Anything else fails the run (spec §6). */
+class Skippable extends Error {}
+
 export async function collect(options: CollectOptions): Promise<Collected> {
   const get = makeGet(options);
   const repos = (await listRepos(get, options.org)).filter(
@@ -48,6 +51,7 @@ export async function collect(options: CollectOptions): Promise<Collected> {
     try {
       const updated = await lastCommitDate(get, base, repo.default_branch);
       if (repo.is_template) {
+        if (template) throw new Skippable("a second template repo");
         template = {
           repo: repo.name,
           siteUrl,
@@ -57,11 +61,11 @@ export async function collect(options: CollectOptions): Promise<Collected> {
         continue;
       }
       const text = await get(
-        `${base}/contents/course.json?ref=${repo.default_branch}`,
+        `${base}/contents/course.json?ref=${encodeURIComponent(repo.default_branch)}`,
         true,
       ).catch((error) => {
         if (error instanceof NotFound)
-          throw new Error(`no course.json on ${repo.default_branch}`);
+          throw new Skippable(`no course.json on ${repo.default_branch}`);
         throw error;
       });
       const parsed = parseCourseJson(text);
@@ -79,10 +83,8 @@ export async function collect(options: CollectOptions): Promise<Collected> {
         updated,
       });
     } catch (error) {
-      skipped.push({
-        repo: repo.name,
-        reason: error instanceof Error ? error.message : String(error),
-      });
+      if (!(error instanceof Skippable)) throw error;
+      skipped.push({ repo: repo.name, reason: error.message });
     }
   }
   return { courses, template, skipped };
@@ -127,12 +129,12 @@ async function lastCommitDate(
   branch: string,
 ): Promise<Date> {
   const commits = JSON.parse(
-    await get(`${base}/commits?sha=${branch}&per_page=1`),
+    await get(`${base}/commits?sha=${encodeURIComponent(branch)}&per_page=1`),
   ) as {
     commit: { committer: { date: string } };
   }[];
   const date = commits[0]?.commit.committer.date;
-  if (!date) throw new Error(`no commits on ${branch}`);
+  if (!date) throw new Skippable(`no commits on ${branch}`);
   return new Date(date);
 }
 
@@ -143,7 +145,7 @@ async function countLessons(
 ): Promise<number> {
   try {
     const entries = JSON.parse(
-      await get(`${base}/contents/lo-config?ref=${branch}`),
+      await get(`${base}/contents/lo-config?ref=${encodeURIComponent(branch)}`),
     ) as {
       name: string;
       type: string;
