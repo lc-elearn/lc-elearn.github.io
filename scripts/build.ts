@@ -6,6 +6,7 @@
  */
 import { appendFileSync, writeFileSync } from "node:fs";
 import { collect } from "../src/collect";
+import { shouldPublish } from "../src/guard";
 import { renderPage } from "../src/render";
 
 const result = await collect({
@@ -13,6 +14,11 @@ const result = await collect({
   selfRepo: "lc-elearn.github.io",
   token: process.env.GITHUB_TOKEN,
 });
+const decision = shouldPublish(result);
+if (!decision.ok) {
+  console.error(decision.reason);
+  process.exit(1);
+}
 writeFileSync(
   "site/index.html",
   renderPage({ ...result, refreshed: new Date() }),
