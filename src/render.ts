@@ -11,7 +11,7 @@ const DATE = new Intl.DateTimeFormat("en-GB", {
 const TIME = new Intl.DateTimeFormat("en-GB", {
   hour: "2-digit",
   minute: "2-digit",
-  hour12: false,
+  hourCycle: "h23",
   timeZone: TIME_ZONE,
 });
 
@@ -70,7 +70,7 @@ function courseCard(course: Course): string {
           <p class="card-meta">${lessonLabel(course.lessons)} · Updated ${formatDate(course.updated)}</p>
           <p class="card-links">
             <a class="card-open" href="${escapeHtml(course.siteUrl)}">Open course<span class="visually-hidden">: ${title}</span></a>
-            <a class="card-source" href="${escapeHtml(course.repoUrl)}">Source on GitHub</a>
+            <a class="card-source" href="${escapeHtml(course.repoUrl)}">Source on GitHub<span class="visually-hidden">: ${title}</span></a>
           </p>
         </article>
       </li>`;
@@ -86,7 +86,7 @@ function templateCard(template: TemplateSite): string {
       <h2 id="template-heading">Course template</h2>
       <p>The starting point every course is made from, with its example lesson and the pages for testing every exercise type.</p>
       <ul class="template-links">${links}</ul>
-      <p class="card-meta">Updated ${formatDate(template.updated)} · <a href="${escapeHtml(template.repoUrl)}">Source on GitHub</a></p>
+      <p class="card-meta">Updated ${formatDate(template.updated)} · <a href="${escapeHtml(template.repoUrl)}">Source on GitHub<span class="visually-hidden">: Course template</span></a></p>
     </section>`;
 }
 

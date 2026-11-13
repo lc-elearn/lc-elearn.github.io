@@ -129,3 +129,53 @@ describe("renderPage", () => {
     ).toContain("No courses are published yet.");
   });
 });
+
+describe("renderPage details", () => {
+  it("gives each Source link a unique name", () => {
+    const page = renderPage({
+      courses: [course()],
+      template: TEMPLATE,
+      refreshed: UPDATED,
+    });
+    expect(page).toContain(
+      'Source on GitHub<span class="visually-hidden">: Russian Basic Vocabulary</span>',
+    );
+    expect(page).toContain(
+      'Source on GitHub<span class="visually-hidden">: Course template</span>',
+    );
+  });
+
+  it("shows the time just after midnight as 00:05, not 24:05", () => {
+    const page = renderPage({
+      courses: [],
+      template: null,
+      refreshed: new Date("2026-11-14T00:05:00Z"),
+    });
+    expect(page).toContain("Refreshed 14 Nov 2026, 00:05");
+  });
+
+  it("escapes quotes and angle brackets in a course URL", () => {
+    const page = renderPage({
+      courses: [course({ siteUrl: 'https://x/"><script>/' })],
+      template: null,
+      refreshed: UPDATED,
+    });
+    expect(page).toContain('href="https://x/&quot;&gt;&lt;script&gt;/"');
+    expect(page).not.toContain("<script>");
+  });
+
+  it("shows the lesson label on the card", () => {
+    const one = renderPage({
+      courses: [course({ lessons: 1 })],
+      template: null,
+      refreshed: UPDATED,
+    });
+    const none = renderPage({
+      courses: [course({ lessons: 0 })],
+      template: null,
+      refreshed: UPDATED,
+    });
+    expect(one).toContain("1 lesson ·");
+    expect(none).toContain("No lessons yet ·");
+  });
+});
