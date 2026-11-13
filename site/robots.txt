@@ -1,0 +1,4 @@
+# Keeps every site on lc-elearn.github.io out of search engines: the landing page and
+# every course preview share this host. Spec §5.
+User-agent: *
+Disallow: /
